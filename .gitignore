@@ -1,7 +1,17 @@
+# Virtual Environment
 venv/
 .venv/
+
+# Python Cache
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Environment & Secrets
 .env
 .streamlit/secrets.toml
+
+# Generated Reports
 reports/
+
+# IDE
+.vscode/
