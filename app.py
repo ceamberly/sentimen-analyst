@@ -1,5 +1,22 @@
+
+import io
+import html
+import re
+
 import streamlit as st
 import pandas as pd
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    LongTable,
+    TableStyle
+)
+from reportlab.lib.units import mm
 
 from src.scraper import search_youtube
 from src.preprocessing import preprocess_comments
@@ -25,18 +42,12 @@ st.set_page_config(
 DEFAULT_STATES = {
     "menu": "Overview",
     "language": "id",
-    "search_config": None,
     "analysis_projects": [],
     "analysis_results": None,
     "active_analysis_config": None,
     "preprocessing_results": None,
-    "preprocessing_config": None,
     "labeling_results": None,
     "labeling_saved": False,
-    "labeling_version": 0,
-
-    # Default preferences
-    "default_platform": "YouTube",
     "default_content_language": "Indonesian",
     "default_max_contents": 50,
     "default_max_comments": 100
@@ -53,21 +64,10 @@ for key, value in DEFAULT_STATES.items():
 
 TEXT = {
     "id": {
-        "overview": "Dashboard",
-        "new_analysis": "Analisis Baru",
-        "preprocessing": "Prapemrosesan Data",
-        "labeling": "Pelabelan Sentimen",
-        "explorer": "Penjelajah Sentimen",
-        "history": "Riwayat Analisis",
-        "settings": "Pengaturan",
+        "overview": "Overview",
+        "new_analysis": "New Analyst",
         "workspace": "WORKSPACE",
-        "platform_options": "PILIHAN PLATFORM",
-        "active": "Aktif",
-        "coming_soon": "Segera hadir",
         "language": "Bahasa / Language",
-        "indonesian": "Indonesia",
-        "english": "Inggris",
-
         "dashboard_desc": "Pantau dan kelola proyek analisis media sosial.",
         "total_projects": "Total Proyek",
         "available_platforms": "Platform Tersedia",
@@ -76,27 +76,21 @@ TEXT = {
         "recent_projects": "Proyek Terbaru",
         "no_projects": "Belum Ada Proyek",
         "no_projects_desc": "Proyek analisismu akan muncul di sini.",
-
-        "project": "Proyek",
-        "keyword": "Kata Kunci",
-        "platforms": "Platform",
         "project_config": "Konfigurasi Proyek",
         "project_name": "Nama Proyek",
         "project_placeholder": "Contoh: Opini masyarakat tentang harga BBM",
         "select_platforms": "Pilih Platform",
         "select_platform_desc": "Pilih satu atau beberapa platform media sosial.",
-        "available_platforms_label": "Platform yang Tersedia",
-        "select_platform_placeholder": "Pilih platform media sosial...",
+        "available_platforms": "Platform yang Tersedia",
         "search_config": "Konfigurasi Pencarian",
         "search_keyword": "Kata Kunci Pencarian",
         "keyword_placeholder": "Contoh: karhutla",
-        "max_contents": "Maksimal Konten",
-        "max_comments": "Maksimal Komentar per Konten",
+        "max_contents": "Maksimal Video",
+        "max_comments": "Maksimal Komentar per Video",
         "comment_limit": "Batas komentar berlaku untuk setiap video secara terpisah.",
         "preferences": "Preferensi Analisis",
         "content_language": "Bahasa Konten",
-        "search_button": "Cari Media Sosial →",
-
+        "search_button": "Mulai Analisis →",
         "enter_project": "Masukkan nama proyek terlebih dahulu.",
         "select_platform_warning": "Pilih minimal satu platform.",
         "enter_keyword": "Masukkan kata kunci pencarian.",
@@ -105,15 +99,8 @@ TEXT = {
         "search_success": "Pengumpulan data YouTube berhasil!",
         "search_failed": "Gagal mengumpulkan data YouTube. Periksa API atau koneksi internet.",
         "unsupported": "Platform berikut belum terintegrasi:",
-        "config_preview": "Ringkasan Konfigurasi",
-        "save_config": "Simpan Konfigurasi Proyek",
-        "duplicate_project": "Nama proyek tersebut sudah digunakan.",
-        "config_saved": "Konfigurasi proyek berhasil disimpan!",
-        "max_contents_metric": "Maksimal Konten",
-        "comments_per_content": "Komentar per Konten",
         "youtube_notice": "Saat ini YouTube merupakan platform pertama yang sudah terintegrasi.",
-
-        "search_results": "Hasil Pencarian",
+        "search_results": "Hasil Scraping",
         "videos_found": "Video Ditemukan",
         "comments_collected": "Komentar Dikumpulkan",
         "collection_errors": "Kesalahan Pengumpulan",
@@ -124,15 +111,11 @@ TEXT = {
         "view_errors": "Lihat Kesalahan Pengumpulan",
         "unknown_video": "Video Tidak Diketahui",
         "unknown_error": "Kesalahan Tidak Diketahui",
-
+        "raw_dataset": "Dataset Mentah",
+        "preprocessing": "Prapemrosesan Data",
         "preprocessing_desc": "Bersihkan dan siapkan komentar untuk analisis sentimen.",
         "no_dataset": "Belum ada dataset. Silakan kumpulkan data terlebih dahulu.",
-        "go_new_analysis": "Buka Analisis Baru dan lakukan pencarian YouTube.",
         "no_comments_preprocessing": "Tidak ada komentar untuk diproses.",
-        "raw_dataset": "Dataset Mentah",
-        "available_columns": "Kolom Tersedia",
-        "preview_raw": "Pratinjau Komentar Mentah",
-        "preprocessing_config": "Konfigurasi Prapemrosesan",
         "process_description": "Tahapan pemrosesan yang akan dilakukan:",
         "remove_empty": "Menghapus komentar kosong.",
         "remove_duplicate": "Menghapus komentar duplikat.",
@@ -152,9 +135,7 @@ TEXT = {
         "removed_comments": "Komentar Dihapus",
         "before_after": "Sebelum dan Sesudah Prapemrosesan",
         "processed_dataset": "Dataset Hasil Prapemrosesan",
-        "export_dataset": "Ekspor Dataset",
-        "download_processed": "Unduh Dataset Hasil Prapemrosesan (CSV)",
-
+        "labeling": "Pelabelan Sentimen",
         "labeling_desc": "Klasifikasikan dan periksa sentimen komentar.",
         "automatic_labeling": "Pelabelan Sentimen Otomatis",
         "automatic_description": "Sistem akan mengelompokkan komentar ke dalam tiga kategori sentimen.",
@@ -164,89 +145,49 @@ TEXT = {
         "positive_opinion": "Opini positif",
         "negative_opinion": "Opini negatif",
         "neutral_opinion": "Opini netral",
-        "automatic_note": "Label otomatis merupakan prediksi awal berdasarkan kamus sentimen sederhana. Periksa hasilnya sebelum digunakan untuk pelatihan model.",
+        "automatic_note": "Label otomatis merupakan prediksi awal berdasarkan kamus sentimen sederhana. Periksa hasilnya sebelum digunakan.",
         "generate_labels": "Buat Label Sentimen →",
         "analyzing_sentiment": "Sedang menganalisis sentimen komentar...",
         "labeling_success": "Pelabelan sentimen otomatis berhasil!",
         "labeling_failed": "Pelabelan sentimen gagal.",
-        "sentiment_results": "Hasil Sentimen",
+        "sentiment_results": "Hasil Analisis Sentimen",
         "total_comments": "Total Komentar",
         "sentiment_distribution": "Distribusi Sentimen",
-        "label_summary": "Ringkasan Label",
+        "label_summary": "Ringkasan Sentimen",
         "manual_review": "Pemeriksaan Label Manual",
-        "manual_review_note": "Ubah label melalui pilihan pada kolom Label Akhir. Kolom lainnya hanya dapat dibaca.",
+        "manual_review_note": "Ubah label melalui pilihan pada kolom Label Akhir.",
         "final_label": "Label Akhir",
         "automatic_label": "Label Otomatis",
         "confidence": "Tingkat Keyakinan",
         "save_labels": "Simpan Label yang Diperiksa",
-        "labels_saved": "Label hasil pemeriksaan tersimpan dalam sesi saat ini.",
-        "ready_next": "Dataset siap digunakan untuk tahap berikutnya.",
+        "labels_saved": "Label hasil pemeriksaan tersimpan.",
+        "ready_next": "Dataset siap digunakan.",
         "changed_labels": "Label yang diubah secara manual",
-        "export_labeled": "Ekspor Dataset Berlabel",
-        "download_labeled": "Unduh Dataset Berlabel (CSV)",
+        "export_labeled": "Download Hasil Analisis",
         "labeled_note": "Dataset berisi komentar asli, prediksi otomatis, dan label hasil pemeriksaan.",
-
-        "explorer_desc": "Jelajahi opini audiens yang telah diklasifikasikan.",
-        "sentiment_overview": "Ringkasan Sentimen",
-        "classified_comments": "Komentar yang Diklasifikasikan",
-        "no_sentiment": "Belum Ada Data Sentimen",
-        "no_sentiment_desc": "Selesaikan pengumpulan data, prapemrosesan, dan pelabelan untuk melihat hasil sentimen.",
-        "complete_labeling": "Selesaikan Pelabelan Sentimen untuk menampilkan hasil.",
-
-        "history_desc": "Lihat kembali proyek analisis sebelumnya.",
-        "max_contents_history": "Maksimal konten",
-        "no_history": "Belum Ada Riwayat Analisis",
-        "history_note": "Riwayat proyek masih tersimpan dalam sesi aplikasi dan akan hilang ketika sesi berakhir.",
-
-        "settings_desc": "Kelola preferensi, data, dan informasi aplikasi.",
-        "general_preferences": "Preferensi Analisis",
-        "analysis_language": "Bahasa Konten Default",
-        "default_platform": "Platform Utama",
-        "default_max_contents": "Batas Video Default",
-        "default_max_comments": "Batas Komentar Default",
-        "save_preferences": "Simpan Preferensi",
-        "preferences_saved": "Preferensi berhasil disimpan dan akan digunakan pada Analisis Baru.",
-        "preferences_note": "Pengaturan tersimpan selama sesi aplikasi berjalan.",
-        "platform_information": "Status Platform",
-        "platform_note": "Platform lain akan diintegrasikan secara bertahap.",
-        "data_export": "Data & Ekspor",
-        "data_description": "Ringkasan data yang tersedia dalam sesi aplikasi saat ini.",
-        "raw_data_count": "Komentar Mentah",
-        "processed_data_count": "Komentar Hasil Preprocessing",
-        "labeled_data_count": "Komentar Berlabel",
-        "data_source": "Sumber Data",
-        "data_source_note": "Data dikumpulkan dari YouTube. Teks komentar asli tetap disimpan dan tidak diterjemahkan oleh aplikasi.",
-        "export_status": "Format ekspor yang tersedia saat ini adalah CSV.",
-        "about": "Tentang Aplikasi",
-        "about_description": "Sentiment Analyst adalah aplikasi untuk mengumpulkan komentar media sosial, melakukan prapemrosesan teks, dan mengelompokkan sentimen.",
-        "current_features": "Fitur Saat Ini",
-        "feature_collection": "Pengumpulan video dan komentar YouTube",
-        "feature_preprocessing": "Prapemrosesan teks menggunakan Sastrawi",
-        "feature_labeling": "Pelabelan sentimen berbasis leksikon",
-        "feature_review": "Pemeriksaan dan koreksi label secara manual",
-        "interface_languages": "Bahasa Antarmuka",
-        "sentiment_categories": "Kategori Sentimen",
-        "version": "SENTIMENT ANALYST · KECERDASAN MEDIA SOSIAL",
-        "no_processed_data": "Belum ada dataset hasil prapemrosesan.",
-        "complete_preprocessing": "Selesaikan Prapemrosesan Data sebelum melakukan pelabelan."
+        "export_dataset": "Download Dataset",
+        "download_raw": "Download Hasil Scraping",
+        "download_processed": "Download Hasil Preprocessing",
+        "download_labeled": "Download Hasil Labeling",
+        "download_format": "Pilih Format Download",
+        "export_success": "Dataset siap diunduh.",
+        "project": "Proyek",
+        "keyword": "Kata Kunci",
+        "platforms": "Platform",
+        "no_history": "Belum Ada Proyek",
+        "version": "SENTIMENT ANALYST · SOCIAL INTELLIGENCE",
+        "active": "Aktif",
+        "coming_soon": "Segera hadir",
+        "indonesian": "Indonesia",
+        "english": "Inggris",
+        "all_languages": "Semua Bahasa"
     },
 
     "en": {
-        "overview": "Dashboard",
-        "new_analysis": "New Analysis",
-        "preprocessing": "Data Preprocessing",
-        "labeling": "Sentiment Labeling",
-        "explorer": "Sentiment Explorer",
-        "history": "Analysis History",
-        "settings": "Settings",
+        "overview": "Overview",
+        "new_analysis": "New Analyst",
         "workspace": "WORKSPACE",
-        "platform_options": "PLATFORM OPTIONS",
-        "active": "Active",
-        "coming_soon": "Coming soon",
         "language": "Language / Bahasa",
-        "indonesian": "Indonesian",
-        "english": "English",
-
         "dashboard_desc": "Monitor and manage your social media analysis projects.",
         "total_projects": "Total Projects",
         "available_platforms": "Available Platforms",
@@ -255,27 +196,21 @@ TEXT = {
         "recent_projects": "Recent Projects",
         "no_projects": "No Projects Yet",
         "no_projects_desc": "Your analysis projects will appear here.",
-
-        "project": "Project",
-        "keyword": "Keyword",
-        "platforms": "Platforms",
         "project_config": "Project Configuration",
         "project_name": "Project Name",
         "project_placeholder": "Example: Public opinion about fuel prices",
         "select_platforms": "Select Platforms",
         "select_platform_desc": "Choose one or more social media platforms.",
-        "available_platforms_label": "Available Platforms",
-        "select_platform_placeholder": "Select social media platforms...",
+        "available_platforms": "Available Platforms",
         "search_config": "Search Configuration",
         "search_keyword": "Search Keyword",
         "keyword_placeholder": "Example: forest fires",
-        "max_contents": "Maximum Content Results",
-        "max_comments": "Maximum Comments Per Content",
+        "max_contents": "Maximum Videos",
+        "max_comments": "Maximum Comments Per Video",
         "comment_limit": "Comment limits apply separately to each video.",
         "preferences": "Analysis Preferences",
         "content_language": "Content Language",
-        "search_button": "Search Social Media →",
-
+        "search_button": "Start Analysis →",
         "enter_project": "Please enter a project name.",
         "select_platform_warning": "Please select at least one platform.",
         "enter_keyword": "Please enter a search keyword.",
@@ -284,15 +219,8 @@ TEXT = {
         "search_success": "YouTube data collection completed!",
         "search_failed": "Failed to collect YouTube data. Check your API configuration or connection.",
         "unsupported": "These platforms are not integrated yet:",
-        "config_preview": "Configuration Preview",
-        "save_config": "Save Project Configuration",
-        "duplicate_project": "A project with this name already exists.",
-        "config_saved": "Project configuration saved!",
-        "max_contents_metric": "Maximum Contents",
-        "comments_per_content": "Comments Per Content",
         "youtube_notice": "Currently, YouTube is the first integrated platform.",
-
-        "search_results": "Search Results",
+        "search_results": "Scraping Results",
         "videos_found": "Videos Found",
         "comments_collected": "Comments Collected",
         "collection_errors": "Collection Errors",
@@ -303,15 +231,11 @@ TEXT = {
         "view_errors": "View Collection Errors",
         "unknown_video": "Unknown Video",
         "unknown_error": "Unknown Error",
-
+        "raw_dataset": "Raw Dataset",
+        "preprocessing": "Data Preprocessing",
         "preprocessing_desc": "Clean and prepare comments for sentiment analysis.",
         "no_dataset": "No dataset available. Please collect data first.",
-        "go_new_analysis": "Go to New Analysis and perform a YouTube search.",
         "no_comments_preprocessing": "No comments available for preprocessing.",
-        "raw_dataset": "Raw Dataset",
-        "available_columns": "Available Columns",
-        "preview_raw": "Preview Raw Comments",
-        "preprocessing_config": "Preprocessing Configuration",
         "process_description": "The following processes will be performed:",
         "remove_empty": "Remove empty comments.",
         "remove_duplicate": "Remove duplicate comments.",
@@ -331,10 +255,8 @@ TEXT = {
         "removed_comments": "Removed Comments",
         "before_after": "Before & After Preprocessing",
         "processed_dataset": "Processed Dataset",
-        "export_dataset": "Export Dataset",
-        "download_processed": "Download Processed Dataset (CSV)",
-
-        "labeling_desc": "Classify and review the sentiment of comments.",
+        "labeling": "Sentiment Labeling",
+        "labeling_desc": "Classify and review comment sentiment.",
         "automatic_labeling": "Automatic Sentiment Labeling",
         "automatic_description": "The system will classify comments into three sentiment categories.",
         "positive": "Positive",
@@ -343,71 +265,42 @@ TEXT = {
         "positive_opinion": "Positive opinions",
         "negative_opinion": "Negative opinions",
         "neutral_opinion": "Neutral opinions",
-        "automatic_note": "Automatic labels are initial predictions based on a simple sentiment dictionary. Review results before model training.",
+        "automatic_note": "Automatic labels are initial predictions based on a simple sentiment dictionary. Review the results before use.",
         "generate_labels": "Generate Sentiment Labels →",
         "analyzing_sentiment": "Analyzing comment sentiment...",
         "labeling_success": "Automatic sentiment labeling completed!",
         "labeling_failed": "Sentiment labeling failed.",
-        "sentiment_results": "Sentiment Results",
+        "sentiment_results": "Sentiment Analysis Results",
         "total_comments": "Total Comments",
         "sentiment_distribution": "Sentiment Distribution",
-        "label_summary": "Label Summary",
+        "label_summary": "Sentiment Summary",
         "manual_review": "Manual Label Review",
-        "manual_review_note": "Change the label using the dropdown in the Final Label column. Other columns are read-only.",
+        "manual_review_note": "Change the label using the dropdown in the Final Label column.",
         "final_label": "Final Label",
         "automatic_label": "Automatic Label",
         "confidence": "Confidence",
         "save_labels": "Save Reviewed Labels",
-        "labels_saved": "Reviewed labels saved in the current session.",
-        "ready_next": "Your dataset is ready for the next stage.",
+        "labels_saved": "Reviewed labels saved.",
+        "ready_next": "Dataset is ready.",
         "changed_labels": "Manually changed labels",
-        "export_labeled": "Export Labeled Dataset",
-        "download_labeled": "Download Labeled Dataset (CSV)",
+        "export_labeled": "Download Analysis Results",
         "labeled_note": "The dataset contains original comments, automatic predictions, and reviewed labels.",
-
-        "explorer_desc": "Explore classified audience opinions.",
-        "sentiment_overview": "Sentiment Overview",
-        "classified_comments": "Classified Comments",
-        "no_sentiment": "No Sentiment Data Available",
-        "no_sentiment_desc": "Complete data collection, preprocessing, and labeling to explore sentiment results.",
-        "complete_labeling": "Complete Sentiment Labeling to display results.",
-
-        "history_desc": "Review your previous analysis projects.",
-        "max_contents_history": "Maximum contents",
-        "no_history": "No Analysis History",
-        "history_note": "Project history is stored in the current application session and will reset when the session ends.",
-
-        "settings_desc": "Manage your preferences, data, and application information.",
-        "general_preferences": "Analysis Preferences",
-        "analysis_language": "Default Content Language",
-        "default_platform": "Default Platform",
-        "default_max_contents": "Default Video Limit",
-        "default_max_comments": "Default Comment Limit",
-        "save_preferences": "Save Preferences",
-        "preferences_saved": "Preferences saved and will be used in New Analysis.",
-        "preferences_note": "Settings are stored during the current application session.",
-        "platform_information": "Platform Status",
-        "platform_note": "Other platforms will be integrated progressively.",
-        "data_export": "Data & Export",
-        "data_description": "Overview of data available in the current application session.",
-        "raw_data_count": "Raw Comments",
-        "processed_data_count": "Preprocessed Comments",
-        "labeled_data_count": "Labeled Comments",
-        "data_source": "Data Source",
-        "data_source_note": "Data is collected from YouTube. Original comment text is preserved and is not translated by the application.",
-        "export_status": "CSV is currently the available export format.",
-        "about": "About",
-        "about_description": "Sentiment Analyst is an application for collecting social media comments, preprocessing text, and classifying sentiment.",
-        "current_features": "Current Features",
-        "feature_collection": "YouTube video and comment collection",
-        "feature_preprocessing": "Text preprocessing using Sastrawi",
-        "feature_labeling": "Lexicon-based sentiment labeling",
-        "feature_review": "Manual label review and correction",
-        "interface_languages": "Interface Languages",
-        "sentiment_categories": "Sentiment Categories",
+        "export_dataset": "Download Dataset",
+        "download_raw": "Download Scraping Results",
+        "download_processed": "Download Preprocessing Results",
+        "download_labeled": "Download Labeling Results",
+        "download_format": "Choose Download Format",
+        "export_success": "Dataset is ready to download.",
+        "project": "Project",
+        "keyword": "Keyword",
+        "platforms": "Platforms",
+        "no_history": "No Projects Yet",
         "version": "SENTIMENT ANALYST · SOCIAL INTELLIGENCE",
-        "no_processed_data": "No processed dataset available.",
-        "complete_preprocessing": "Complete Data Preprocessing before performing sentiment labeling."
+        "active": "Active",
+        "coming_soon": "Coming soon",
+        "indonesian": "Indonesian",
+        "english": "English",
+        "all_languages": "All Languages"
     }
 }
 
@@ -418,17 +311,12 @@ def t(key):
 
 
 # =====================================
-# MENU
+# CONSTANTS
 # =====================================
 
-MENU_KEYS = {
+MENU_OPTIONS = {
     "Overview": "overview",
-    "New Analysis": "new_analysis",
-    "Data Preprocessing": "preprocessing",
-    "Sentiment Labeling": "labeling",
-    "Sentiment Explorer": "explorer",
-    "History": "history",
-    "Settings": "settings"
+    "New Analyst": "new_analysis"
 }
 
 PLATFORMS = [
@@ -452,7 +340,7 @@ COMMENT_LIMITS = [20, 50, 100, 250, 500, 1000]
 
 
 # =====================================
-# HELPER FUNCTIONS
+# DATA HELPER FUNCTIONS
 # =====================================
 
 def get_raw_comments():
@@ -467,13 +355,27 @@ def get_raw_comments():
 def prepare_export_dataframe(dataframe):
     export_df = dataframe.copy()
 
-    for column in ["tokens", "filtered_tokens"]:
-        if column in export_df.columns:
-            export_df[column] = export_df[column].apply(
-                lambda value: " ".join(value)
-                if isinstance(value, list)
-                else str(value)
-            )
+    def safe_value(value):
+
+        if value is None:
+            return ""
+
+        if isinstance(value, (list, tuple, set)):
+            return ", ".join(str(item) for item in value)
+
+        if isinstance(value, dict):
+            return str(value)
+
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+
+        return str(value)
+
+    for column in export_df.columns:
+        export_df[column] = export_df[column].apply(safe_value)
 
     return export_df
 
@@ -486,6 +388,229 @@ def show_page_header(section, title, description):
     """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+
+# =====================================
+# EXPORT FUNCTIONS
+# =====================================
+
+def create_pdf(dataframe, title):
+    output = io.BytesIO()
+
+    page_width, _ = landscape(A4)
+
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        rightMargin=10 * mm,
+        leftMargin=10 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Heading1"],
+        fontSize=16,
+        leading=20,
+        spaceAfter=5
+    )
+
+    cell_style = ParagraphStyle(
+        "TableCell",
+        parent=styles["BodyText"],
+        fontSize=7,
+        leading=9,
+        wordWrap="CJK",
+        splitLongWords=True
+    )
+
+    header_style = ParagraphStyle(
+        "TableHeader",
+        parent=cell_style,
+        textColor=colors.white,
+        fontName="Helvetica-Bold",
+        fontSize=7,
+        leading=9
+    )
+
+    elements = [
+        Paragraph(html.escape(str(title)), title_style),
+        Paragraph(f"Total data: {len(dataframe)}", styles["Normal"]),
+        Spacer(1, 10)
+    ]
+
+    if not dataframe.empty and len(dataframe.columns) > 0:
+
+        table_data = []
+
+        header = [
+            Paragraph(
+                html.escape(str(column)),
+                header_style
+            )
+            for column in dataframe.columns
+        ]
+
+        table_data.append(header)
+
+        for _, row in dataframe.iterrows():
+
+            table_row = []
+
+            for value in row:
+
+                text_value = str(value)
+
+                text_value = re.sub(
+                    r"[\x00-\x08\x0b\x0c\x0e-\x1f]",
+                    "",
+                    text_value
+                )
+
+                text_value = html.escape(text_value)
+                text_value = text_value.replace("\n", "<br/>")
+
+                table_row.append(
+                    Paragraph(text_value, cell_style)
+                )
+
+            table_data.append(table_row)
+
+        columns = list(dataframe.columns)
+
+        available_width = page_width - (20 * mm)
+
+        long_text_columns = [
+            "text",
+            "comment",
+            "cleaned_text",
+            "stemmed_text",
+            "content",
+            "title"
+        ]
+
+        weights = []
+
+        for column in columns:
+            if str(column).lower() in long_text_columns:
+                weights.append(3)
+            else:
+                weights.append(1)
+
+        total_weight = sum(weights)
+
+        column_widths = [
+            available_width * weight / total_weight
+            for weight in weights
+        ]
+
+        table = LongTable(
+            table_data,
+            colWidths=column_widths,
+            repeatRows=1,
+            hAlign="LEFT"
+        )
+
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7665f5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cccccc")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+                colors.white,
+                colors.HexColor("#f5f5fa")
+            ])
+        ]))
+
+        elements.append(table)
+
+    document.build(elements)
+
+    output.seek(0)
+    return output.getvalue()
+
+
+def show_download_options(dataframe, filename, title, label):
+
+    if dataframe is None or dataframe.empty:
+
+        st.info(
+            "Tidak ada data untuk diunduh."
+            if st.session_state.language == "id"
+            else "No data available for download."
+        )
+
+        return
+
+    export_df = prepare_export_dataframe(dataframe)
+
+    st.markdown(f"**{label}**")
+
+    st.caption(
+        f"{len(export_df)} baris data tersedia untuk diunduh."
+        if st.session_state.language == "id"
+        else f"{len(export_df)} rows available for download."
+    )
+
+    # CSV
+    csv_data = export_df.to_csv(
+        index=False
+    ).encode("utf-8-sig")
+
+    # PDF
+    pdf_data = None
+
+    try:
+        pdf_data = create_pdf(export_df, title)
+
+    except Exception as error:
+        st.error(
+            f"Gagal membuat PDF: {error}"
+            if st.session_state.language == "id"
+            else f"Failed to create PDF: {error}"
+        )
+
+    # Hanya dua tombol download
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.download_button(
+            label="📄 Download CSV",
+            data=csv_data,
+            file_name=f"{filename}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key=f"{filename}_csv"
+        )
+
+    with col2:
+
+        if pdf_data is not None:
+
+            st.download_button(
+                label="📕 Download PDF",
+                data=pdf_data,
+                file_name=f"{filename}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"{filename}_pdf"
+            )
+
+        else:
+
+            st.warning(
+                "PDF tidak tersedia."
+                if st.session_state.language == "id"
+                else "PDF is unavailable."
+            )
 
 
 # =====================================
@@ -587,7 +712,6 @@ div[data-testid="stMetric"] {
 div[data-testid="stTabs"] button {
     font-weight: 600;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -612,9 +736,9 @@ with st.sidebar:
         t("language"),
         options=["id", "en"],
         format_func=lambda value: (
-            "🇮🇩 " + t("indonesian")
+            "🇮🇩 " + TEXT["id"]["indonesian"]
             if value == "id"
-            else "🇬🇧 " + t("english")
+            else "🇬🇧 " + TEXT["en"]["english"]
         ),
         key="language"
     )
@@ -622,14 +746,15 @@ with st.sidebar:
     st.divider()
 
     menu = st.radio(
-        "WORKSPACE",
-        options=list(MENU_KEYS.keys()),
+        t("workspace"),
+        options=list(MENU_OPTIONS.keys()),
+        format_func=lambda value: t(MENU_OPTIONS[value]),
         key="menu"
     )
 
     st.divider()
 
-    st.caption(t("platform_options"))
+    st.caption("PLATFORM OPTIONS")
 
     for platform_name in PLATFORMS:
 
@@ -674,7 +799,6 @@ if menu == "Overview":
         len(st.session_state.analysis_projects)
     )
 
-    # Only YouTube is currently integrated.
     col2.metric(t("available_platforms"), 1)
 
     col3.metric(t("current_status"), t("ready"))
@@ -717,16 +841,20 @@ if menu == "Overview":
 
 
 # =====================================
-# NEW ANALYSIS
+# NEW ANALYST
 # =====================================
 
-elif menu == "New Analysis":
+elif menu == "New Analyst":
 
     show_page_header(
-        "WORKSPACE / PROJECT",
+        "WORKSPACE / ANALYSIS",
         t("new_analysis"),
         t("dashboard_desc")
     )
+
+    # ---------------------------------
+    # PROJECT CONFIGURATION
+    # ---------------------------------
 
     with st.container(border=True):
 
@@ -734,7 +862,8 @@ elif menu == "New Analysis":
 
         project_name = st.text_input(
             t("project_name"),
-            placeholder=t("project_placeholder")
+            placeholder=t("project_placeholder"),
+            key="project_name_input"
         )
 
         st.divider()
@@ -742,13 +871,11 @@ elif menu == "New Analysis":
         st.markdown(f"### {t('select_platforms')}")
         st.caption(t("select_platform_desc"))
 
-        default_platform = st.session_state.default_platform
-
         selected_platforms = st.multiselect(
-            t("available_platforms_label"),
+            t("available_platforms"),
             options=PLATFORMS,
-            default=[default_platform],
-            placeholder=t("select_platform_placeholder")
+            default=["YouTube"],
+            key="selected_platforms"
         )
 
         st.divider()
@@ -757,7 +884,8 @@ elif menu == "New Analysis":
 
         keyword = st.text_input(
             t("search_keyword"),
-            placeholder=t("keyword_placeholder")
+            placeholder=t("keyword_placeholder"),
+            key="search_keyword_input"
         )
 
         col1, col2 = st.columns(2)
@@ -787,7 +915,12 @@ elif menu == "New Analysis":
             CONTENT_LANGUAGES,
             index=CONTENT_LANGUAGES.index(
                 st.session_state.default_content_language
-            )
+            ),
+            format_func=lambda value: {
+                "Indonesian": "Indonesia" if st.session_state.language == "id" else "Indonesian",
+                "English": "Inggris" if st.session_state.language == "id" else "English",
+                "All Languages": "Semua Bahasa" if st.session_state.language == "id" else "All Languages"
+            }[value]
         )
 
         start_search = st.button(
@@ -821,14 +954,14 @@ elif menu == "New Analysis":
                     "language": analysis_language
                 }
 
-                st.session_state.search_config = config
-
                 st.session_state.analysis_results = None
                 st.session_state.active_analysis_config = None
                 st.session_state.preprocessing_results = None
-                st.session_state.preprocessing_config = None
                 st.session_state.labeling_results = None
                 st.session_state.labeling_saved = False
+
+                if "sentiment_label_editor" in st.session_state:
+                    del st.session_state["sentiment_label_editor"]
 
                 try:
 
@@ -843,6 +976,21 @@ elif menu == "New Analysis":
 
                     st.session_state.analysis_results = result
                     st.session_state.active_analysis_config = config
+
+                    existing_projects = st.session_state.analysis_projects
+
+                    project_exists = any(
+                        project["name"] == config["name"]
+                        and project["keyword"] == config["keyword"]
+                        for project in existing_projects
+                    )
+
+                    if not project_exists:
+                        st.session_state.analysis_projects.append({
+                            "name": config["name"],
+                            "keyword": config["keyword"],
+                            "platforms": config["platforms"]
+                        })
 
                     st.success(t("search_success"))
 
@@ -862,62 +1010,9 @@ elif menu == "New Analysis":
                     st.error(t("search_failed"))
                     st.exception(error)
 
-    # CONFIGURATION PREVIEW
-
-    if st.session_state.search_config:
-
-        config = st.session_state.search_config
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(f"### {t('config_preview')}")
-
-        with st.container(border=True):
-
-            st.write(f"**{t('project_name')}:** {config['name']}")
-            st.write(f"**{t('keyword')}:** {config['keyword']}")
-            st.write(
-                f"**{t('platforms')}:** "
-                + ", ".join(config["platforms"])
-            )
-
-            col1, col2 = st.columns(2)
-
-            col1.metric(
-                t("max_contents_metric"),
-                config["max_contents"]
-            )
-
-            col2.metric(
-                t("comments_per_content"),
-                config["max_comments"]
-            )
-
-            st.caption(
-                f"{t('content_language')}: {config['language']}"
-            )
-
-            st.info(t("youtube_notice"))
-
-            if st.button(
-                t("save_config"),
-                type="primary",
-                use_container_width=True
-            ):
-
-                existing = [
-                    project["name"]
-                    for project in st.session_state.analysis_projects
-                ]
-
-                if config["name"] in existing:
-                    st.warning(t("duplicate_project"))
-
-                else:
-                    st.session_state.analysis_projects.append(config)
-                    st.success(t("config_saved"))
-                    st.session_state.search_config = None
-
+    # ---------------------------------
     # SEARCH RESULTS
+    # ---------------------------------
 
     if (
         st.session_state.analysis_results is not None
@@ -945,6 +1040,10 @@ elif menu == "New Analysis":
         col2.metric(t("comments_collected"), len(comments))
         col3.metric(t("collection_errors"), len(errors))
 
+        # ---------------------------------
+        # VIDEO TABLE
+        # ---------------------------------
+
         st.markdown(f"### {t('youtube_videos')}")
 
         if videos:
@@ -952,7 +1051,10 @@ elif menu == "New Analysis":
             videos_df = pd.DataFrame(videos)
 
             video_columns = [
-                "title", "author", "published_at", "content_url"
+                "title",
+                "author",
+                "published_at",
+                "content_url"
             ]
 
             available = [
@@ -961,7 +1063,7 @@ elif menu == "New Analysis":
             ]
 
             st.dataframe(
-                videos_df[available],
+                videos_df[available] if available else videos_df,
                 use_container_width=True,
                 hide_index=True
             )
@@ -969,34 +1071,37 @@ elif menu == "New Analysis":
         else:
             st.info(t("no_videos"))
 
+        # ---------------------------------
+        # RAW COMMENTS
+        # ---------------------------------
+
         st.markdown(f"### {t('collected_comments')}")
 
-        if comments:
+        raw_df = get_raw_comments()
 
-            comments_df = pd.DataFrame(comments)
-
-            comment_columns = [
-                "platform",
-                "content_title",
-                "author",
-                "text",
-                "published_at",
-                "like_count"
-            ]
-
-            available = [
-                column for column in comment_columns
-                if column in comments_df.columns
-            ]
+        if not raw_df.empty:
 
             st.dataframe(
-                comments_df[available],
+                raw_df,
                 use_container_width=True,
                 hide_index=True
             )
 
+            st.markdown(f"### {t('export_dataset')}")
+
+            show_download_options(
+                raw_df,
+                "sentiment_raw_dataset",
+                "Sentiment Analyst - Raw Dataset",
+                t("download_raw")
+            )
+
         else:
             st.info(t("no_comments"))
+
+        # ---------------------------------
+        # COLLECTION ERRORS
+        # ---------------------------------
 
         if errors:
 
@@ -1008,27 +1113,18 @@ elif menu == "New Analysis":
                         f"— {item.get('error', t('unknown_error'))}"
                     )
 
+        # ---------------------------------
+        # DATA PREPROCESSING
+        # ---------------------------------
 
-# =====================================
-# DATA PREPROCESSING
-# =====================================
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.divider()
 
-elif menu == "Data Preprocessing":
-
-    show_page_header(
-        "WORKSPACE / NLP",
-        t("preprocessing"),
-        t("preprocessing_desc")
-    )
-
-    if st.session_state.analysis_results is None:
-
-        st.warning(t("no_dataset"))
-        st.info(t("go_new_analysis"))
-
-    else:
-
-        raw_df = get_raw_comments()
+        show_page_header(
+            "WORKSPACE / NLP",
+            t("preprocessing"),
+            t("preprocessing_desc")
+        )
 
         if raw_df.empty:
 
@@ -1041,17 +1137,19 @@ elif menu == "Data Preprocessing":
             col1, col2 = st.columns(2)
 
             col1.metric(t("comments_collected"), len(raw_df))
-            col2.metric(t("available_columns"), len(raw_df.columns))
 
-            with st.expander(t("preview_raw")):
+            col2.metric(
+                "Total Kolom" if st.session_state.language == "id" else "Total Columns",
+                len(raw_df.columns)
+            )
+
+            with st.expander("Preview Dataset"):
 
                 st.dataframe(
                     raw_df,
                     use_container_width=True,
                     hide_index=True
                 )
-
-            st.markdown(f"### {t('preprocessing_config')}")
 
             with st.container(border=True):
 
@@ -1084,12 +1182,11 @@ elif menu == "Data Preprocessing":
                         processed_df = preprocess_comments(raw_df)
 
                     st.session_state.preprocessing_results = processed_df
-                    st.session_state.preprocessing_config = (
-                        st.session_state.active_analysis_config
-                    )
-
                     st.session_state.labeling_results = None
                     st.session_state.labeling_saved = False
+
+                    if "sentiment_label_editor" in st.session_state:
+                        del st.session_state["sentiment_label_editor"]
 
                     st.success(t("preprocessing_success"))
 
@@ -1097,6 +1194,10 @@ elif menu == "Data Preprocessing":
 
                     st.error(t("preprocessing_failed"))
                     st.exception(error)
+
+            # ---------------------------------
+            # PREPROCESSING RESULTS
+            # ---------------------------------
 
             if st.session_state.preprocessing_results is not None:
 
@@ -1117,7 +1218,9 @@ elif menu == "Data Preprocessing":
                 st.markdown(f"### {t('before_after')}")
 
                 comparison_columns = [
-                    "text", "cleaned_text", "stemmed_text"
+                    "text",
+                    "cleaned_text",
+                    "stemmed_text"
                 ]
 
                 available = [
@@ -1125,11 +1228,13 @@ elif menu == "Data Preprocessing":
                     if column in processed_df.columns
                 ]
 
-                st.dataframe(
-                    processed_df[available],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                if available:
+
+                    st.dataframe(
+                        processed_df[available],
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                 st.markdown(f"### {t('processed_dataset')}")
 
@@ -1141,586 +1246,303 @@ elif menu == "Data Preprocessing":
 
                 st.markdown(f"### {t('export_dataset')}")
 
-                export_df = prepare_export_dataframe(processed_df)
-
-                csv_data = export_df.to_csv(
-                    index=False
-                ).encode("utf-8-sig")
-
-                st.download_button(
-                    label=t("download_processed"),
-                    data=csv_data,
-                    file_name="sentiment_processed_dataset.csv",
-                    mime="text/csv",
-                    type="primary",
-                    use_container_width=True
+                show_download_options(
+                    processed_df,
+                    "sentiment_processed_dataset",
+                    "Sentiment Analyst - Processed Dataset",
+                    t("download_processed")
                 )
 
+                # ---------------------------------
+                # SENTIMENT LABELING
+                # ---------------------------------
 
-# =====================================
-# SENTIMENT LABELING
-# =====================================
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.divider()
 
-elif menu == "Sentiment Labeling":
-
-    show_page_header(
-        "WORKSPACE / NLP",
-        t("labeling"),
-        t("labeling_desc")
-    )
-
-    if st.session_state.preprocessing_results is None:
-
-        st.warning(t("no_processed_data"))
-        st.info(t("complete_preprocessing"))
-
-    elif st.session_state.preprocessing_results.empty:
-
-        st.warning(t("no_processed_data"))
-
-    else:
-
-        processed_df = st.session_state.preprocessing_results
-
-        st.markdown(f"### {t('automatic_labeling')}")
-
-        with st.container(border=True):
-
-            st.write(t("automatic_description"))
-
-            col1, col2, col3 = st.columns(3)
-
-            col1.markdown(f"🟢 **{t('positive')}**")
-            col1.caption(t("positive_opinion"))
-
-            col2.markdown(f"🔴 **{t('negative')}**")
-            col2.caption(t("negative_opinion"))
-
-            col3.markdown(f"⚪ **{t('neutral')}**")
-            col3.caption(t("neutral_opinion"))
-
-            st.divider()
-
-            st.caption(t("automatic_note"))
-
-            run_labeling = st.button(
-                t("generate_labels"),
-                type="primary",
-                use_container_width=True
-            )
-
-        if run_labeling:
-
-            try:
-
-                with st.spinner(t("analyzing_sentiment")):
-
-                    labeled_df = label_dataset(processed_df)
-
-                st.session_state.labeling_results = labeled_df
-                st.session_state.labeling_version += 1
-                st.session_state.labeling_saved = False
-
-                if "sentiment_label_editor" in st.session_state:
-                    del st.session_state["sentiment_label_editor"]
-
-                st.success(t("labeling_success"))
-
-            except Exception as error:
-
-                st.error(t("labeling_failed"))
-                st.exception(error)
-
-        if st.session_state.labeling_results is not None:
-
-            labeled_df = st.session_state.labeling_results.copy()
-
-            st.markdown(f"## {t('sentiment_results')}")
-
-            total = len(labeled_df)
-
-            positive_count = (
-                labeled_df["label"] == "Positive"
-            ).sum()
-
-            negative_count = (
-                labeled_df["label"] == "Negative"
-            ).sum()
-
-            neutral_count = (
-                labeled_df["label"] == "Neutral"
-            ).sum()
-
-            col1, col2, col3, col4 = st.columns(4)
-
-            col1.metric(t("total_comments"), total)
-            col2.metric(t("positive"), positive_count)
-            col3.metric(t("negative"), negative_count)
-            col4.metric(t("neutral"), neutral_count)
-
-            st.markdown(f"### {t('sentiment_distribution')}")
-
-            distribution_df = pd.DataFrame({
-                "Sentiment": [
-                    t("positive"),
-                    t("negative"),
-                    t("neutral")
-                ],
-                "Total": [
-                    positive_count,
-                    negative_count,
-                    neutral_count
-                ]
-            })
-
-            chart_col, info_col = st.columns([2, 1])
-
-            with chart_col:
-                st.bar_chart(
-                    distribution_df.set_index("Sentiment")
+                show_page_header(
+                    "WORKSPACE / NLP",
+                    t("labeling"),
+                    t("labeling_desc")
                 )
 
-            with info_col:
+                with st.container(border=True):
 
-                st.markdown(f"#### {t('label_summary')}")
-                st.write(f"🟢 {t('positive')}: **{positive_count}**")
-                st.write(f"🔴 {t('negative')}: **{negative_count}**")
-                st.write(f"⚪ {t('neutral')}: **{neutral_count}**")
+                    st.markdown(f"### {t('automatic_labeling')}")
 
-            st.markdown(f"### {t('manual_review')}")
-            st.caption(t("manual_review_note"))
+                    st.write(t("automatic_description"))
 
-            edited_df = st.data_editor(
-                labeled_df,
-                column_config={
-                    "label": st.column_config.SelectboxColumn(
-                        t("final_label"),
-                        options=[
-                            "Positive",
-                            "Negative",
-                            "Neutral"
-                        ],
-                        format_func=lambda value: {
-                            "Positive": t("positive"),
-                            "Negative": t("negative"),
-                            "Neutral": t("neutral")
-                        }.get(value, value),
-                        required=True
-                    ),
-                    "auto_label": st.column_config.TextColumn(
-                        t("automatic_label")
-                    ),
-                    "confidence": st.column_config.TextColumn(
-                        t("confidence")
+                    col1, col2, col3 = st.columns(3)
+
+                    col1.markdown(f"🟢 **{t('positive')}**")
+                    col1.caption(t("positive_opinion"))
+
+                    col2.markdown(f"🔴 **{t('negative')}**")
+                    col2.caption(t("negative_opinion"))
+
+                    col3.markdown(f"⚪ **{t('neutral')}**")
+                    col3.caption(t("neutral_opinion"))
+
+                    st.divider()
+
+                    st.caption(t("automatic_note"))
+
+                    run_labeling = st.button(
+                        t("generate_labels"),
+                        type="primary",
+                        use_container_width=True
                     )
-                },
-                disabled=[
-                    column for column in labeled_df.columns
-                    if column != "label"
-                ],
-                use_container_width=True,
-                hide_index=True,
-                height=450,
-                key="sentiment_label_editor"
-            )
-
-            edited_df = edited_df.copy()
-
-            edited_df["label_source"] = edited_df.apply(
-                lambda row: (
-                    "Manual"
-                    if row["label"] != row["auto_label"]
-                    else "Automatic"
-                ),
-                axis=1
-            )
-
-            st.session_state.labeling_results = edited_df
-
-            changed_count = (
-                edited_df["label"] != edited_df["auto_label"]
-            ).sum()
-
-            st.caption(
-                f"{t('changed_labels')}: {changed_count}"
-            )
-
-            if st.button(
-                t("save_labels"),
-                type="primary",
-                use_container_width=True
-            ):
-
-                st.session_state.labeling_saved = True
-                st.success(t("labels_saved"))
-
-            if st.session_state.labeling_saved:
-                st.success(t("ready_next"))
-
-            st.markdown(f"### {t('export_labeled')}")
-
-            export_df = prepare_export_dataframe(
-                st.session_state.labeling_results
-            )
-
-            csv_data = export_df.to_csv(
-                index=False
-            ).encode("utf-8-sig")
-
-            st.download_button(
-                label=t("download_labeled"),
-                data=csv_data,
-                file_name="sentiment_labeled_dataset.csv",
-                mime="text/csv",
-                type="primary",
-                use_container_width=True
-            )
-
-            st.caption(t("labeled_note"))
-
-
-# =====================================
-# SENTIMENT EXPLORER
-# =====================================
-
-elif menu == "Sentiment Explorer":
-
-    show_page_header(
-        "WORKSPACE / NLP",
-        t("explorer"),
-        t("explorer_desc")
-    )
-
-    if st.session_state.labeling_results is not None:
-
-        labeled_df = st.session_state.labeling_results.copy()
-
-        positive_count = (
-            labeled_df["label"] == "Positive"
-        ).sum()
-
-        negative_count = (
-            labeled_df["label"] == "Negative"
-        ).sum()
-
-        neutral_count = (
-            labeled_df["label"] == "Neutral"
-        ).sum()
-
-        st.markdown(f"### {t('sentiment_overview')}")
 
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(t("positive"), positive_count)
-        col2.metric(t("negative"), negative_count)
-        col3.metric(t("neutral"), neutral_count)
+                if run_labeling:
 
-        chart_df = pd.DataFrame({
-            "Sentiment": [
-                t("positive"),
-                t("negative"),
-                t("neutral")
-            ],
-            "Total": [
-                positive_count,
-                negative_count,
-                neutral_count
-            ]
-        })
-
-        st.bar_chart(chart_df.set_index("Sentiment"))
-
-        st.markdown(f"### {t('classified_comments')}")
-
-        display_columns = [
-            column for column in [
-                "author",
-                "text",
-                "label",
-                "confidence"
-            ]
-            if column in labeled_df.columns
-        ]
+                    try:
 
-        st.dataframe(
-            labeled_df[display_columns],
-            use_container_width=True,
-            hide_index=True
-        )
+                        with st.spinner(t("analyzing_sentiment")):
 
-    else:
+                            labeled_df = label_dataset(processed_df)
 
-        st.markdown(f"""
-        <div style="text-align:center;padding:35px 20px;
-                    border:1px solid var(--border-color);
-                    border-radius:15px;">
-            <div style="font-size:34px;color:#7665f5;">◈</div>
-            <div style="font-size:18px;font-weight:700;margin-top:12px;">
-                {t('no_sentiment')}
-            </div>
-            <div style="font-size:13px;opacity:.65;margin-top:7px;">
-                {t('no_sentiment_desc')}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.info(t("complete_labeling"))
-
-
-# =====================================
-# HISTORY
-# =====================================
-
-elif menu == "History":
-
-    show_page_header(
-        "WORKSPACE / ARCHIVE",
-        t("history"),
-        t("history_desc")
-    )
-
-    if st.session_state.analysis_projects:
-
-        for project in reversed(st.session_state.analysis_projects):
-
-            with st.container(border=True):
-
-                st.markdown(f"**{project['name']}**")
-
-                st.caption(
-                    f"{t('keyword')}: {project['keyword']}"
-                )
-
-                st.write(
-                    f"{t('platforms')}: "
-                    + ", ".join(project["platforms"])
-                )
-
-                st.write(
-                    f"{t('max_contents_history')}: "
-                    f"{project['max_contents']}"
-                )
-
-    else:
-
-        st.info(t("no_history"))
-
-    st.caption(t("history_note"))
-
+                        st.session_state.labeling_results = labeled_df.copy()
+                        st.session_state.labeling_saved = False
 
-# =====================================
-# SETTINGS
-# =====================================
+                        if "sentiment_label_editor" in st.session_state:
+                            del st.session_state["sentiment_label_editor"]
 
-elif menu == "Settings":
+                        st.success(t("labeling_success"))
 
-    show_page_header(
-        "WORKSPACE / PREFERENCES",
-        t("settings"),
-        t("settings_desc")
-    )
+                    except Exception as error:
 
-    tab_preferences, tab_data, tab_platforms, tab_about = st.tabs([
-        t("general_preferences"),
-        t("data_export"),
-        t("platform_information"),
-        t("about")
-    ])
+                        st.error(t("labeling_failed"))
+                        st.exception(error)
 
-    # ---------------------------------
-    # TAB 1: ANALYSIS PREFERENCES
-    # ---------------------------------
+                # ---------------------------------
+                # SENTIMENT RESULTS
+                # ---------------------------------
 
-    with tab_preferences:
+                if st.session_state.labeling_results is not None:
 
-        st.markdown(f"### {t('general_preferences')}")
+                    labeled_df = st.session_state.labeling_results.copy()
 
-        st.caption(t("preferences_note"))
+                    st.markdown(f"## {t('sentiment_results')}")
 
-        with st.container(border=True):
+                    if "label" not in labeled_df.columns:
 
-            st.selectbox(
-                t("default_platform"),
-                options=["YouTube"],
-                index=0,
-                key="settings_platform"
-            )
+                        st.error(
+                            "Kolom label tidak ditemukan pada hasil labeling."
+                            if st.session_state.language == "id"
+                            else "The label column was not found in the labeling results."
+                        )
 
-            st.selectbox(
-                t("analysis_language"),
-                options=CONTENT_LANGUAGES,
-                index=CONTENT_LANGUAGES.index(
-                    st.session_state.default_content_language
-                ),
-                key="settings_content_language"
-            )
+                    else:
 
-            st.divider()
+                        total = len(labeled_df)
 
-            st.markdown(f"**{t('default_max_contents')}**")
+                        positive_count = (
+                            labeled_df["label"] == "Positive"
+                        ).sum()
 
-            st.select_slider(
-                t("max_contents"),
-                options=CONTENT_LIMITS,
-                value=st.session_state.default_max_contents,
-                key="settings_max_contents"
-            )
+                        negative_count = (
+                            labeled_df["label"] == "Negative"
+                        ).sum()
 
-            st.markdown(f"**{t('default_max_comments')}**")
+                        neutral_count = (
+                            labeled_df["label"] == "Neutral"
+                        ).sum()
 
-            st.select_slider(
-                t("max_comments"),
-                options=COMMENT_LIMITS,
-                value=st.session_state.default_max_comments,
-                key="settings_max_comments"
-            )
+                        # TOTAL AND COUNTS
 
-            st.divider()
+                        col1, col2, col3, col4 = st.columns(4)
 
-            if st.button(
-                t("save_preferences"),
-                type="primary",
-                use_container_width=True
-            ):
+                        col1.metric(t("total_comments"), total)
+                        col2.metric(t("positive"), positive_count)
+                        col3.metric(t("negative"), negative_count)
+                        col4.metric(t("neutral"), neutral_count)
 
-                st.session_state.default_platform = (
-                    st.session_state.settings_platform
-                )
+                        # SENTIMENT PERCENTAGES
 
-                st.session_state.default_content_language = (
-                    st.session_state.settings_content_language
-                )
+                        if total > 0:
 
-                st.session_state.default_max_contents = (
-                    st.session_state.settings_max_contents
-                )
+                            positive_percentage = positive_count / total * 100
+                            negative_percentage = negative_count / total * 100
+                            neutral_percentage = neutral_count / total * 100
 
-                st.session_state.default_max_comments = (
-                    st.session_state.settings_max_comments
-                )
+                            st.markdown(
+                                "### Persentase Sentimen"
+                                if st.session_state.language == "id"
+                                else "### Sentiment Percentage"
+                            )
 
-                st.success(t("preferences_saved"))
+                            pct1, pct2, pct3 = st.columns(3)
 
-    # ---------------------------------
-    # TAB 2: DATA & EXPORT
-    # ---------------------------------
+                            pct1.metric(
+                                t("positive"),
+                                f"{positive_percentage:.1f}%"
+                            )
 
-    with tab_data:
+                            pct2.metric(
+                                t("negative"),
+                                f"{negative_percentage:.1f}%"
+                            )
 
-        st.markdown(f"### {t('data_export')}")
-        st.caption(t("data_description"))
+                            pct3.metric(
+                                t("neutral"),
+                                f"{neutral_percentage:.1f}%"
+                            )
 
-        raw_df = get_raw_comments()
-
-        raw_count = len(raw_df)
-
-        processed_df = st.session_state.preprocessing_results
-
-        processed_count = (
-            len(processed_df)
-            if processed_df is not None
-            else 0
-        )
-
-        labeled_df = st.session_state.labeling_results
-
-        labeled_count = (
-            len(labeled_df)
-            if labeled_df is not None
-            else 0
-        )
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(
-            t("raw_data_count"),
-            raw_count
-        )
-
-        col2.metric(
-            t("processed_data_count"),
-            processed_count
-        )
-
-        col3.metric(
-            t("labeled_data_count"),
-            labeled_count
-        )
-
-        st.divider()
-
-        st.markdown(f"**{t('data_source')}**")
-        st.write("◈ YouTube")
-
-        st.caption(t("data_source_note"))
-
-        st.info(t("export_status"))
-
-    # ---------------------------------
-    # TAB 3: PLATFORM STATUS
-    # ---------------------------------
-
-    with tab_platforms:
-
-        st.markdown(f"### {t('platform_information')}")
-
-        for platform_name in PLATFORMS:
-
-            is_active = platform_name == "YouTube"
-
-            status = (
-                t("active")
-                if is_active
-                else t("coming_soon")
-            )
-
-            with st.container(border=True):
-
-                col1, col2 = st.columns([3, 1])
-
-                col1.markdown(f"**◈ {platform_name}**")
-
-                if is_active:
-                    col2.success(status)
-                else:
-                    col2.caption(status)
-
-        st.caption(t("platform_note"))
-
-    # ---------------------------------
-    # TAB 4: ABOUT
-    # ---------------------------------
-
-    with tab_about:
-
-        st.markdown(f"### {t('about')}")
-
-        st.write(t("about_description"))
-
-        st.divider()
-
-        st.markdown(f"**{t('current_features')}**")
-
-        st.markdown(f"""
-        - {t('feature_collection')}
-        - {t('feature_preprocessing')}
-        - {t('feature_labeling')}
-        - {t('feature_review')}
-        """)
-
-        st.divider()
-
-        st.markdown(f"**{t('interface_languages')}**")
-        st.write("🇮🇩 Bahasa Indonesia")
-        st.write("🇬🇧 English")
-
-        st.divider()
-
-        st.markdown(f"**{t('sentiment_categories')}**")
-        st.write(f"🟢 {t('positive')}")
-        st.write(f"🔴 {t('negative')}")
-        st.write(f"⚪ {t('neutral')}")
-
-        st.divider()
-
-        st.caption("Sentiment Analyst · Version 1.0")
+                            percentage_df = pd.DataFrame({
+                                "Sentiment": [
+                                    t("positive"),
+                                    t("negative"),
+                                    t("neutral")
+                                ],
+                                "Percentage": [
+                                    positive_percentage,
+                                    negative_percentage,
+                                    neutral_percentage
+                                ]
+                            })
+
+                            st.bar_chart(
+                                percentage_df.set_index("Sentiment")
+                            )
+
+                        # SENTIMENT DISTRIBUTION
+
+                        st.markdown(f"### {t('sentiment_distribution')}")
+
+                        distribution_df = pd.DataFrame({
+                            "Sentiment": [
+                                t("positive"),
+                                t("negative"),
+                                t("neutral")
+                            ],
+                            "Total": [
+                                positive_count,
+                                negative_count,
+                                neutral_count
+                            ]
+                        })
+
+                        chart_col, info_col = st.columns([2, 1])
+
+                        with chart_col:
+
+                            st.bar_chart(
+                                distribution_df.set_index("Sentiment")
+                            )
+
+                        with info_col:
+
+                            st.markdown(f"#### {t('label_summary')}")
+
+                            st.write(
+                                f"🟢 {t('positive')}: **{positive_count}**"
+                            )
+
+                            st.write(
+                                f"🔴 {t('negative')}: **{negative_count}**"
+                            )
+
+                            st.write(
+                                f"⚪ {t('neutral')}: **{neutral_count}**"
+                            )
+
+                        # MANUAL REVIEW
+
+                        st.markdown(f"### {t('manual_review')}")
+                        st.caption(t("manual_review_note"))
+
+                        if "auto_label" in labeled_df.columns:
+
+                            edited_df = st.data_editor(
+                                labeled_df,
+                                column_config={
+                                    "label": st.column_config.SelectboxColumn(
+                                        t("final_label"),
+                                        options=[
+                                            "Positive",
+                                            "Negative",
+                                            "Neutral"
+                                        ],
+                                        format_func=lambda value: {
+                                            "Positive": t("positive"),
+                                            "Negative": t("negative"),
+                                            "Neutral": t("neutral")
+                                        }.get(value, value),
+                                        required=True
+                                    ),
+                                    "auto_label": st.column_config.TextColumn(
+                                        t("automatic_label")
+                                    ),
+                                    "confidence": st.column_config.TextColumn(
+                                        t("confidence")
+                                    )
+                                },
+                                disabled=[
+                                    column for column in labeled_df.columns
+                                    if column != "label"
+                                ],
+                                use_container_width=True,
+                                hide_index=True,
+                                height=450,
+                                key="sentiment_label_editor"
+                            )
+
+                        else:
+
+                            edited_df = st.data_editor(
+                                labeled_df,
+                                disabled=True,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=450,
+                                key="sentiment_label_editor"
+                            )
+
+                        edited_df = edited_df.copy()
+
+                        if "auto_label" in edited_df.columns:
+
+                            edited_df["label_source"] = edited_df.apply(
+                                lambda row: (
+                                    "Manual"
+                                    if row["label"] != row["auto_label"]
+                                    else "Automatic"
+                                ),
+                                axis=1
+                            )
+
+                            changed_count = (
+                                edited_df["label"] != edited_df["auto_label"]
+                            ).sum()
+
+                            st.caption(
+                                f"{t('changed_labels')}: {changed_count}"
+                            )
+
+                        st.session_state.labeling_results = edited_df
+
+                        if st.button(
+                            t("save_labels"),
+                            type="primary",
+                            use_container_width=True
+                        ):
+
+                            st.session_state.labeling_saved = True
+                            st.success(t("labels_saved"))
+
+                        if st.session_state.labeling_saved:
+                            st.success(t("ready_next"))
+
+                        # DOWNLOAD LABELED DATA
+
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.markdown(f"### {t('export_labeled')}")
+
+                        show_download_options(
+                            st.session_state.labeling_results,
+                            "sentiment_labeled_dataset",
+                            "Sentiment Analyst - Labeled Dataset",
+                            t("download_labeled")
+                        )
+
+                        st.caption(t("labeled_note"))
