@@ -5,23 +5,13 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-
-# =====================================
-# ENVIRONMENT CONFIGURATION
-# =====================================
-
 load_dotenv()
-
 
 # =====================================
 # YOUTUBE API CLIENT
 # =====================================
 
 def get_youtube_client():
-    """
-    Membuat koneksi ke YouTube Data API.
-    """
-
     api_key = os.getenv("YOUTUBE_API_KEY")
 
     if not api_key:
@@ -37,9 +27,8 @@ def get_youtube_client():
         cache_discovery=False
     )
 
-
 # =====================================
-# YOUTUBE SEARCH & COMMENT SCRAPER
+# YOUTUBE SCRAPER
 # =====================================
 
 def search_youtube(
@@ -48,34 +37,17 @@ def search_youtube(
     max_comments=100,
     language="Indonesian"
 ):
-    """
-    Mencari beberapa video YouTube berdasarkan keyword,
-    kemudian mengambil komentar dari setiap video.
-
-    Returns:
-        {
-            "contents": list,
-            "comments": list,
-            "errors": list
-        }
-    """
-
     youtube = get_youtube_client()
 
     contents = []
     comments = []
     errors = []
 
-    # =====================================
-    # 1. SEARCH VIDEOS
-    # =====================================
-
+    # SEARCH VIDEOS
     page_token = None
 
     try:
-
         while len(contents) < max_contents:
-
             remaining = max_contents - len(contents)
 
             request_params = {
@@ -89,15 +61,10 @@ def search_youtube(
             if page_token:
                 request_params["pageToken"] = page_token
 
-            # LANGUAGE FILTER
-
             if language == "Indonesian":
                 request_params["relevanceLanguage"] = "id"
-
             elif language == "English":
                 request_params["relevanceLanguage"] = "en"
-
-            # EXECUTE SEARCH
 
             response = youtube.search().list(
                 **request_params
@@ -109,7 +76,6 @@ def search_youtube(
                 break
 
             for item in items:
-
                 video_id = item["id"]["videoId"]
                 snippet = item["snippet"]
 
@@ -132,25 +98,18 @@ def search_youtube(
                 break
 
     except HttpError as error:
-
         raise RuntimeError(
             f"Gagal mencari video YouTube: {error}"
         )
 
-    # =====================================
-    # 2. COLLECT COMMENTS
-    # =====================================
-
+    # COLLECT COMMENTS
     for video in contents:
-
         video_id = video["content_id"]
         collected_for_video = 0
         comment_page_token = None
 
         try:
-
             while collected_for_video < max_comments:
-
                 remaining = max_comments - collected_for_video
 
                 request_params = {
@@ -174,7 +133,6 @@ def search_youtube(
                     break
 
                 for item in items:
-
                     comment = item["snippet"]["topLevelComment"]
                     snippet = comment["snippet"]
 
@@ -203,7 +161,6 @@ def search_youtube(
                     break
 
         except HttpError as error:
-
             errors.append({
                 "platform": "YouTube",
                 "content_id": video_id,
@@ -211,15 +168,101 @@ def search_youtube(
                 "error": str(error)
             })
 
-            # Lanjut mengambil komentar dari video berikutnya.
-            continue
-
-    # =====================================
-    # 3. RETURN DATA
-    # =====================================
-
     return {
         "contents": contents,
         "comments": comments,
         "errors": errors
+    }
+
+# =====================================
+# PLATFORM REGISTRY
+# =====================================
+
+SCRAPERS = {
+    "YouTube": search_youtube
+}
+
+# =====================================
+# MULTI-PLATFORM SCRAPER
+# =====================================
+
+def search_all_platforms(
+    platforms,
+    keyword,
+    max_contents=50,
+    max_comments=100,
+    language="Indonesian"
+):
+    """
+    Menjalankan scraper berdasarkan platform yang dipilih.
+    Hasil dari seluruh platform digabungkan dalam satu dataset.
+    """
+
+    all_contents = []
+    all_comments = []
+    all_errors = []
+    successful_platforms = []
+
+    for platform in platforms:
+
+        scraper_function = SCRAPERS.get(platform)
+
+        # Platform belum memiliki scraper.
+        if scraper_function is None:
+            all_errors.append({
+                "platform": platform,
+                "content_title": "",
+                "error": (
+                    f"Scraper {platform} belum diintegrasikan."
+                )
+            })
+            continue
+
+        try:
+            result = scraper_function(
+                keyword=keyword,
+                max_contents=max_contents,
+                max_comments=max_comments,
+                language=language
+            )
+
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "Format hasil scraper tidak valid."
+                )
+
+            contents = result.get("contents", [])
+            comments = result.get("comments", [])
+            errors = result.get("errors", [])
+
+            # Pastikan semua baris memiliki identitas platform.
+            for item in contents:
+                item["platform"] = platform
+
+            for item in comments:
+                item["platform"] = platform
+
+            for item in errors:
+                if isinstance(item, dict):
+                    item["platform"] = platform
+
+            all_contents.extend(contents)
+            all_comments.extend(comments)
+            all_errors.extend(errors)
+
+            successful_platforms.append(platform)
+
+        except Exception as error:
+            all_errors.append({
+                "platform": platform,
+                "content_title": "",
+                "error": str(error)
+            })
+
+    return {
+        "contents": all_contents,
+        "comments": all_comments,
+        "errors": all_errors,
+        "platforms_requested": list(platforms),
+        "platforms_succeeded": successful_platforms
     }
